@@ -6,7 +6,7 @@
 #include <string>
 #include <iostream>
 #include <fstream>
-#include <Windows.h>
+#include <vector>
 
 #include "BasicModel.h"
 #include "Model.h"
@@ -28,11 +28,12 @@
 using namespace std;
 
 void init();
+void test();
 Triangle convertTriTo2D(Triangle);
 Vector3 convertVertexTo2D(Vector3);
 void rasterizeTriangle(Triangle);
 Vector3 barycentricCoords(Vector3, Vector3, Vector3, Vector3);
-void writeImage();
+void WriteTga(char* outfile);
 
 float zbuffer[WindowWidth][WindowHeight];
 float red[WindowWidth][WindowHeight];
@@ -45,28 +46,43 @@ int main(int argc, char** argv)
 	string filename = argv[1];
 	BasicModel model(filename);
 
-	// Eventually we'll want to add each of these triangles to a list of some kind. (It should probably be CUDA-friendly.)
-	/*
-	for (vector<Triangle>::iterator it = model.TriangleStructs.begin(); it != model.TriangleStructs.end(); ++it)
+	// Make an array of our Triangle structs
+	Triangle* tris = new Triangle[model.TriangleStructs.size()];
+	for (int i = 0; i < model.TriangleStructs.size(); ++i)
 	{
-		Triangle t = *it;
-		cout << "";
+		tris[i] = model.TriangleStructs[i];
 	}
-	*/
 
 	// initialize the red, green, blue, and Z arrays
 	init();
 
-	// Create a test triangle.
+	// rasterize each triangle
+	for (int i = 0; i < model.TriangleStructs.size(); ++i)
+	{
+		rasterizeTriangle(convertTriTo2D(tris[i]));
+	}
+
+	// Output the image
+	WriteTga("test.tga");
+
+	return 0;
+}
+
+/*
+* Generate and rasterize a couple of test triangles.
+*/
+void test()
+{
+		// Create a test triangle.
 	Vertex v1;
 	Vertex v2;
 	Vertex v3;
 	Vector3 normal;
 
-	// Create a red vertex at (-0.5, 0, 0)
-	v1.position.x = -0.5;
+	// Create a red vertex at (-0.75, 0, -0.75)
+	v1.position.x = -0.75;
 	v1.position.y = 0;
-	v1.position.z = 0;
+	v1.position.z = -0.75;
 	v1.rgb.x = 1;	// red
 	v1.rgb.y = 0;	// green
 	v1.rgb.z = 0;	// blue
@@ -98,6 +114,36 @@ int main(int argc, char** argv)
 	t.v2 = v2;
 	t.v3 = v3;
 
+	Vertex v4;
+	Vertex v5;
+	Vertex v6;
+	v4.position.x = -0.5;
+	v4.position.y = 0.5;
+	v4.position.z = -0.5;
+	v4.rgb.x = 0;
+	v4.rgb.y = 0;
+	v4.rgb.z = 0.5;
+
+	v5.position.x = -0.5;
+	v5.position.y = -0.5;
+	v5.position.z = -0.5;
+	v5.rgb.x = 0;
+	v5.rgb.y = 0;
+	v5.rgb.z = 0.5;
+
+	v6.position.x = 0.5;
+	v6.position.y = -0.5;
+	v6.position.z = -0.5;
+	v6.rgb.x = 0;
+	v6.rgb.y = 0;
+	v6.rgb.z = 0.5;
+
+	Triangle t2;
+	t2.normal = normal;
+	t2.v1 = v4;
+	t2.v2 = v5;
+	t2.v3 = v6;
+
 	// Eventually we'll want to iterate through our list of triangles and 
 	// call these two functions on each of them. For now, just use the test
 	// triangle we made earlier.
@@ -108,8 +154,12 @@ int main(int argc, char** argv)
 	// Rasterize the converted triangle
 	rasterizeTriangle(converted);
 
+	converted = convertTriTo2D(t2);
+	rasterizeTriangle(converted);
+
 	// Temporary testing code:
 	// =================================================================
+	/*
 	ofstream outFile;
 	outFile.open("rasterized.txt");
 
@@ -128,12 +178,8 @@ int main(int argc, char** argv)
 	}
 
 	outFile.close();
+	*/
 	// =================================================================
-
-	// Output the image
-	writeImage();
-
-	return 0;
 }
 
 void init()
@@ -288,39 +334,63 @@ Vector3 barycentricCoords(Vector3 v1, Vector3 v2, Vector3 v3, Vector3 p)
 	return baryCoords;
 }
 
-/*
-* Read the data in the red, green, and blue arrays
-* and write it to an image file.
-*
-* NOTE: Currently not working. I'm guessing the structs aren't being written to the file
-*	correctly, but I'm not sure yet.
-*/
-void writeImage()
+void WriteTga(char *outfile)
 {
-	BITMAPFILEHEADER fileHeader;
-	fileHeader.bfType = 'BM';
-	fileHeader.bfSize = sizeof(BITMAPINFOHEADER);
-	fileHeader.bfReserved1 = 0;
-	fileHeader.bfReserved2 = 0;
-	fileHeader.bfOffBits = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER);
+    FILE *fp = fopen(outfile, "wb"); // originally was just "w"
+    if (fp == NULL)
+    {
+        perror("ERROR: Image::WriteTga() failed to open file for writing!\n");
+        exit(EXIT_FAILURE);
+    }
+    
+    // write 24-bit uncompressed targa header
+    // thanks to Paul Bourke (http://local.wasp.uwa.edu.au/~pbourke/dataformats/tga/)
+    putc(0, fp);
+    putc(0, fp);
+    
+    putc(2, fp); // type is uncompressed RGB
+    
+    putc(0, fp);
+    putc(0, fp);
+    putc(0, fp);
+    putc(0, fp);
+    putc(0, fp);
+    
+    putc(0, fp); // x origin, low byte
+    putc(0, fp); // x origin, high byte
+    
+    putc(0, fp); // y origin, low byte
+    putc(0, fp); // y origin, high byte
 
-	BITMAPINFOHEADER infoHeader;
-	infoHeader.biSize = sizeof(BITMAPINFOHEADER);
-	infoHeader.biWidth = WindowWidth;
-	infoHeader.biHeight = WindowHeight;
-	infoHeader.biPlanes = 1;
-	infoHeader.biBitCount = 24;
-	infoHeader.biCompression = BI_RGB;
-	infoHeader.biSizeImage = sizeof(RGBTRIPLE) * WindowWidth * WindowHeight;
-	infoHeader.biXPelsPerMeter = 2400;
-	infoHeader.biYPelsPerMeter = 2400;
+    putc(WindowWidth & 0xff, fp); // width, low byte
+    putc((WindowWidth & 0xff00) >> 8, fp); // width, high byte
 
-	RGBTRIPLE pixels[WindowWidth * WindowHeight];
+    putc(WindowHeight & 0xff, fp); // height, low byte
+    putc((WindowHeight & 0xff00) >> 8, fp); // height, high byte
 
-	ofstream img;
-	img.open("test.bmp", ios::binary);
-	img.write((char*)&fileHeader, sizeof(fileHeader));
-	img.write((char*)&infoHeader, sizeof(infoHeader));
-	img.write((char*)pixels, sizeof(pixels));
-	img.close();
+    putc(24, fp); // 24-bit color depth
+
+    putc(0, fp);
+
+    // write the raw pixel data in groups of 3 bytes (BGR order)
+    for (int y = 0; y < WindowHeight; y++)
+    {
+        for (int x = 0; x < WindowWidth; x++)
+        {
+            // if color scaling is on, scale 0.0 -> _max as a 0 -> 255 unsigned byte
+            unsigned char rbyte, gbyte, bbyte;
+            double r = (red[x][y] > 1.0) ? 1.0 : red[x][y];
+            double g = (green[x][y] > 1.0) ? 1.0 : green[x][y];
+            double b = (blue[x][y] > 1.0) ? 1.0 : blue[x][y];
+            rbyte = (unsigned char)(r * 255);
+            gbyte = (unsigned char)(g * 255);
+            bbyte = (unsigned char)(b * 255);
+
+            putc(bbyte, fp);
+            putc(gbyte, fp);
+            putc(rbyte, fp);
+        }
+    }
+
+    fclose(fp);
 }
