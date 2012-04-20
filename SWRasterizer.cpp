@@ -34,14 +34,19 @@ Vector3 convertVertexTo2D(Vector3);
 void rasterizeTriangle(Triangle);
 Vector3 barycentricCoords(Vector3, Vector3, Vector3, Vector3);
 void WriteTga(char* outfile);
+Vector3 diffuseShadeVertex(Vector3, Vector3);
 
 float zbuffer[WindowWidth][WindowHeight];
 float red[WindowWidth][WindowHeight];
 float green[WindowWidth][WindowHeight];
 float blue[WindowWidth][WindowHeight];
+Vector3 directionToLight;
+Vector3 lightColor;
 
 int main(int argc, char** argv)
 {
+	init();
+
 	// Parse the model file
 	string filename = argv[1];
 	BasicModel model(filename);
@@ -51,10 +56,13 @@ int main(int argc, char** argv)
 	for (int i = 0; i < model.TriangleStructs.size(); ++i)
 	{
 		tris[i] = model.TriangleStructs[i];
-	}
 
-	// initialize the red, green, blue, and Z arrays
-	init();
+		// do diffuse shading on the vertices. These calculated colors will be
+		// linearly interpolated during rasterization.
+		tris[i].v1.rgb = diffuseShadeVertex(tris[i].normal, tris[i].v1.rgb);
+		tris[i].v2.rgb = diffuseShadeVertex(tris[i].normal, tris[i].v2.rgb);
+		tris[i].v3.rgb = diffuseShadeVertex(tris[i].normal, tris[i].v3.rgb);
+	}
 
 	// rasterize each triangle
 	for (int i = 0; i < model.TriangleStructs.size(); ++i)
@@ -156,30 +164,6 @@ void test()
 
 	converted = convertTriTo2D(t2);
 	rasterizeTriangle(converted);
-
-	// Temporary testing code:
-	// =================================================================
-	/*
-	ofstream outFile;
-	outFile.open("rasterized.txt");
-
-	// write some output to a text file so I can see something.
-	// just put a '*' where there's at least *some* red.
-	for (int x = 0; x < WindowWidth; ++x)
-	{
-		for (int y = 0; y < WindowHeight; ++y)
-		{
-			if (red[x][y] == 0)
-				outFile << " ";
-			else
-				outFile << "*";
-		}
-		outFile << endl;
-	}
-
-	outFile.close();
-	*/
-	// =================================================================
 }
 
 void init()
@@ -194,6 +178,41 @@ void init()
 			blue[i][j] = 0;
 		}
 	}
+
+	// set light to always come from positive Z
+	directionToLight.x = 0;
+	directionToLight.y = 0;
+	directionToLight.z = 1;
+
+	// white light
+	lightColor.x = 1;
+	lightColor.y = 1;
+	lightColor.z = 1;
+}
+
+/*
+* Calculates colors (RGB) for a vertex using diffuse reflectance.
+*
+* normal: The vertex's normal vector
+* diffuseReflectance: how much diffuse light the vertex reflects (red, green, and blue components)
+*
+* returns: The vertex's diffuse color represented as an RGB triplet.
+*/
+Vector3 diffuseShadeVertex(Vector3 normal, Vector3 diffuseReflectance)
+{
+	Vector3 diffuseColor;
+	float nDotL = normal.dotP(directionToLight);
+
+	// red
+	diffuseColor.x = diffuseReflectance.x * nDotL * lightColor.x;
+
+	// green
+	diffuseColor.y = diffuseReflectance.y * nDotL * lightColor.y;
+
+	// blue
+	diffuseColor.z = diffuseReflectance.z * nDotL * lightColor.z;
+
+	return diffuseColor;
 }
 
 /*
