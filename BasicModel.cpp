@@ -27,15 +27,22 @@ BasicModel::BasicModel(string filename)
    center.y = center.y/Vertices.size();
    center.z = center.z/Vertices.size();
 
+   // adjust min/max x and y so that they'll be correct
+   // when the bunny is centered at the origin
+   min_x = min_x + (0 - center.x);
+   max_x = max_x + (0 - center.x);
+   min_y = min_y + (0 - center.y);
+   max_y = max_y + (0 - center.y);
+
    for (int i = 0; i < Triangles.size(); ++i)
    {
 		Tri* t = Triangles[i];
 
 		// Vertex labels in the file start at 1, but vector uses 0-based indices.
 		// Vertices are listed in order of label, though, so <vector pos> + 1 = label.
-		Vector3 v1 = *(Vertices.at(t->v1 - 1));
-		Vector3 v2 = (*Vertices.at(t->v2 - 1));
-		Vector3 v3 = (*Vertices.at(t->v3 - 1));
+		Vector3 v1 = normalizeVertexCoords(*(Vertices.at(t->v1 - 1)));
+		Vector3 v2 = normalizeVertexCoords(*Vertices.at(t->v2 - 1));
+		Vector3 v3 = normalizeVertexCoords(*Vertices.at(t->v3 - 1));
 			 
 		Triangle triangle;
 			 
@@ -205,7 +212,7 @@ BasicModel::Tri* BasicModel::parseTri(string line)
    }
    else
    {
-      t->color = Vector3(1.0,0.0,0.0);
+      t->color = Vector3(1.0,1.0,1.0);
    }
          
 
@@ -299,4 +306,23 @@ void BasicModel::draw(float rx, float ry, float rz)
 
 void BasicModel::setLOD(int lvl)
 {
+}
+
+Vector3 BasicModel::normalizeVertexCoords(Vector3 v)
+{
+	Vector3 normalizedVertex;
+
+	// adjust the vertex's position so that the bunny's
+	// center is at the origin
+	normalizedVertex.x = v.x + (0 - center.x);
+	normalizedVertex.y = v.y + (0 - center.y);
+	normalizedVertex.z = v.z;
+
+	// now scale the vertex's coordinates so the bunny will fill
+	// more of the screen. This should (theoretically) make the bunny
+	// take up about 50% of the image.
+	normalizedVertex.x = (normalizedVertex.x * 0.5) / max_x;
+	normalizedVertex.y = (normalizedVertex.y * 0.5) / max_y;
+
+	return normalizedVertex;
 }
