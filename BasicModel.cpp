@@ -252,7 +252,7 @@ BasicModel::Tri* BasicModel::parseTri(string line)
 
 void BasicModel::draw(float rx, float ry, float rz)
 {
-   glCallList(id);
+   //glCallList(id);
 }
 
 void BasicModel::setLOD(int lvl)

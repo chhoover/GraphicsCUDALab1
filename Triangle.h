@@ -1,6 +1,8 @@
 #ifndef TRIANGLE_H
 #define TRIANGLE_H
 
+#include "utils.h"
+
 typedef struct Vertex
 {
 	Vector3 position;	// X, Y, Z coordinates
