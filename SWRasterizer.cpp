@@ -32,7 +32,7 @@ void test();
 Triangle convertTriTo2D(Triangle);
 Vector3 convertVertexTo2D(Vector3);
 void rasterizeTriangle(Triangle);
-Vector3 barycentricCoords(Vector3, Vector3, Vector3, Vector3);
+Vector3 barycentricCoords(Vector3, Vector3, Vector3, Vector3, float);
 void WriteTga(char* outfile);
 Vector3 diffuseShadeVertex(Vector3, Vector3);
 
@@ -286,8 +286,16 @@ void rasterizeTriangle(Triangle t)
 			p.position.x = x;
 			p.position.y = y;
 
+			//float denom = (v1.x*v2.y) - (v1.x*v3.y) - (v2.x*v1.y) + (v2.x*v3.y) + (v3.x*v1.y) - (v3.x*v2.y);
+			float denom = (t.v1.position.x * t.v2.position.y) -
+				(t.v1.position.x * t.v3.position.y) -
+				(t.v2.position.x * t.v1.position.y) +
+				(t.v2.position.x * t.v3.position.y) +
+				(t.v3.position.x * t.v1.position.y) -
+				(t.v3.position.x * t.v2.position.y);
+
 			// get barycentric coordinates for p (the current X/Y position)
-			Vector3 baryCoords = barycentricCoords(t.v1.position, t.v2.position, t.v3.position, p.position);
+			Vector3 baryCoords = barycentricCoords(t.v1.position, t.v2.position, t.v3.position, p.position, denom);
 
 			// Test the pixel to see if it's inside the triangle. All three
 			// barycentric coordinates must be between 0 and 1 for the pixel
@@ -331,10 +339,10 @@ void rasterizeTriangle(Triangle t)
 *
 * returns: p's corresponding barycentric coordinates as a Vector3 struct. (x = alpha, y = beta, z = gamma)
 */
-Vector3 barycentricCoords(Vector3 v1, Vector3 v2, Vector3 v3, Vector3 p)
+Vector3 barycentricCoords(Vector3 v1, Vector3 v2, Vector3 v3, Vector3 p, float denom)
 {
 	// NOTE: these formulas found at http://crackthecode.us/barycentric/barycentric_coordinates.html
-	float denom = (v1.x*v2.y) - (v1.x*v3.y) - (v2.x*v1.y) + (v2.x*v3.y) + (v3.x*v1.y) - (v3.x*v2.y);
+	//float denom = (v1.x*v2.y) - (v1.x*v3.y) - (v2.x*v1.y) + (v2.x*v3.y) + (v3.x*v1.y) - (v3.x*v2.y);
 
 	// ((X4 * Y2) - (X4 * Y3) - (X2 * Y4) + (X2 * Y3) + (X3 * Y4) - (X3 * Y2)) 
 	float alpha = ((p.x*v2.y) - (p.x*v3.y) - (v2.x*p.y) + (v2.x*v3.y) + (v3.x*p.y) - (v3.x*v2.y)) / denom;
