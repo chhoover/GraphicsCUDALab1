@@ -33,7 +33,6 @@ protected:
    Tri* parseTri(std::string line);
    void ReadFile(std::string filename);
    GLuint createDL();
-   void drawTria(Tri* t);
    Vector3 normalizeVertexCoords(Vector3);
   
 };

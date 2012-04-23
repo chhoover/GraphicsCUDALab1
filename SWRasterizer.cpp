@@ -13,8 +13,8 @@
 #include "Triangle.h"
 
 // Window (screen) dimensions
-#define WindowWidth 400
-#define WindowHeight 400
+#define WindowWidth 2000
+#define WindowHeight 2000
 
 // World coordinates bounding box
 #define XMinWorld -1
@@ -71,7 +71,7 @@ int main(int argc, char** argv)
 	}
 
 	// Output the image
-	WriteTga("test.tga");
+	WriteTga("image.tga");
 
 	return 0;
 }

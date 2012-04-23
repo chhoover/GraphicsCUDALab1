@@ -250,54 +250,6 @@ BasicModel::Tri* BasicModel::parseTri(string line)
    return t;
 }
 
-//drawing routine to draw triangles as wireframe
-void BasicModel::drawTria(Tri* t) 
-{
-   glPushMatrix();
-      // Average the three vectors to determine their centers
-      float xCenter = (Vertices[t->v1 - 1]->x + Vertices[t->v2 - 1]->x + Vertices[t->v3 - 1]->x)/3.0; 
-      float yCenter = (Vertices[t->v1 - 1]->y + Vertices[t->v2 - 1]->y + Vertices[t->v3 - 1]->y)/3.0;
-      float zCenter = (Vertices[t->v1 - 1]->z + Vertices[t->v2 - 1]->z + Vertices[t->v3 - 1]->z)/3.0;
-
-      glBegin(GL_TRIANGLE_FAN);
-
-         //glColor3f(t->color.x,t->color.y,t->color.z);
-         //note that the vertices are indexed starting at 0, but the triangles
-         //index them starting from 1, so we must offset by -1!!!
-
-         float norm = VerticesNormals[t->v1 - 1]->length();
-         glNormal3f(VerticesNormals[t->v1 - 1]->x/norm * 1.0f/max_extent,
-                    VerticesNormals[t->v1 - 1]->y/norm * 1.0f/max_extent,
-                    VerticesNormals[t->v1 - 1]->z/norm * 1.0f/max_extent);
-
-         glVertex3f( Vertices[t->v1 - 1]->x, 
-                     Vertices[t->v1 - 1]->y,
-                     Vertices[t->v1 - 1]->z);
-
-      
-         norm = VerticesNormals[t->v2 - 1]->length();
-         glNormal3f(VerticesNormals[t->v2 - 1]->x/norm * 1.0f/max_extent,
-                    VerticesNormals[t->v2 - 1]->y/norm * 1.0f/max_extent,
-                    VerticesNormals[t->v2 - 1]->z/norm * 1.0f/max_extent);
-      
-         glVertex3f( Vertices[t->v2 - 1]->x, 
-                     Vertices[t->v2 - 1]->y,
-                     Vertices[t->v2 - 1]->z);
-
-      
-         norm = VerticesNormals[t->v3 - 1]->length();
-         glNormal3f(VerticesNormals[t->v3 - 1]->x/norm * 1.0f/max_extent,
-                    VerticesNormals[t->v3 - 1]->y/norm * 1.0f/max_extent,
-                    VerticesNormals[t->v3 - 1]->z/norm * 1.0f/max_extent);
-      
-         glVertex3f( Vertices[t->v3 - 1]->x, 
-                     Vertices[t->v3 - 1]->y,
-                     Vertices[t->v3 - 1]->z);
-
-      glEnd();
-   glPopMatrix();
-}
-
 void BasicModel::draw(float rx, float ry, float rz)
 {
    glCallList(id);
