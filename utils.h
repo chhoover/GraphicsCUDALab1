@@ -35,4 +35,11 @@ class Vector3 {
       }
 };
 
+// C Style struct for use on GPU, similar to Vector3
+struct VectorThree{
+   float x;
+   float y;
+   float z;
+};
+
 #endif

@@ -4,6 +4,7 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#include <stdio.h>
 #include "Model.h"
 
 #include "Triangle.h"
