@@ -36,10 +36,11 @@ void test();
 Triangle convertTriTo2D(Triangle);
 Vector3 convertVertexTo2D(Vector3);
 __device__ __host__ void rasterizeTriangle(Triangle t, float *r, float *g, float *b, float *z);
-VectorThree barycentricCoords(Vector3, Vector3, Vector3, VectorThree);
+VectorThree barycentricCoords(Vector3, Vector3, Vector3, VectorThree, float);
 void WriteTga(char* outfile);
 Vector3 diffuseShadeVertex(Vector3, Vector3);
 __global__ void Rasterize(Triangle *d_tris, float *d_zbuf, float *d_red, float *d_green, float *d_blue);
+void processTriangles(BasicModel*);
 
 float zbuffer[WindowWidth][WindowHeight];
 float red[WindowWidth][WindowHeight];
@@ -51,17 +52,66 @@ Vector3 lightColor;
 int main(int argc, char** argv)
 {
 	init();
+	
+	float xOffsets[5] = {-0.66, -0.33, 0, 0.33, 0.66};
+	float yOffsets[5] = {-0.66, -0.33, 0, 0.33, 0.66};
+	int scaleFactor;
+	
+	// NOTE: To generate 25 tiled bunnies, run as: SWRasterize <model file> -t
+	bool tileBunnies = (argc == 3) && (strcmp("-t", argv[2]) == 0);
+	
 	//Future pointer to device memory for triangle array
-   Triangle *d_tris;
+   //Triangle *d_tris;
    //Pointers to device memory for rgb and zbuffer arrays
    float *d_zbuf, *d_red, *d_green, *d_blue;
 
 	// Parse the model file
 	string filename = argv[1];
-	BasicModel model(filename);
+	BasicModel* model = new BasicModel(filename);
+	
 	int arrSize = model.TriangleStructs.size();
 	int a2 = WindowWidth*WindowHeight*sizeof(float);
 
+	//Allocate memory on device for zbuffer and RGB
+	cudaMalloc((void **)&d_zbuf, a2);
+	cudaMemset(d_zbuf, 0, a2);
+	cudaMalloc((void **)&d_red, a2);
+	cudaMemset(d_red, 0, a2);
+	cudaMalloc((void **)&d_green, a2);
+	cudaMemset(d_green, 0, a2);
+	cudaMalloc((void **)&d_blue, a2);
+	cudaMemset(d_blue, 0, a2);
+	
+	if (tileBunnies)
+	{
+		scaleFactor = 3;
+		for (int yIndex = 0; yIndex < 5; ++yIndex)
+		{
+			for (int xIndex = 0; xIndex < 5; ++xIndex)
+			{
+				model->createTriangleStructs(xOffsets[xIndex], yOffsets[yIndex], scaleFactor);
+
+				processTriangles(model);
+			}
+		}
+	}
+	else
+	{
+		scaleFactor = 10;
+		model->createTriangleStructs(0, 0, scaleFactor);
+
+		processTriangles(model);
+	}
+	
+	// Copy color buffers back to host memory
+	for(int i = 0; i < WindowHeight; i++)
+	{
+		cudaMemcpy(red[i], d_red+(i*WindowWidth), WindowWidth*sizeof(float), cudaMemcpyDeviceToHost);
+		cudaMemcpy(green[i], d_green+(i*WindowWidth), WindowWidth*sizeof(float), cudaMemcpyDeviceToHost);
+		cudaMemcpy(blue[i], d_blue+(i*WindowWidth), WindowWidth*sizeof(float), cudaMemcpyDeviceToHost);
+	}
+	
+	/*
 	// Make an array of our Triangle structs
 	Triangle* tris = new Triangle[model.TriangleStructs.size()];
     
@@ -77,16 +127,7 @@ int main(int argc, char** argv)
 	}
 	
 	printf("tris[45]: %lf, %lf\n", tris[14].v1.position.x, tris[12].v1.position.x);
-	
-	//Allocate memory on device for zbuffer and RGB
-	cudaMalloc((void **)&d_zbuf, a2);
-	cudaMemset(d_zbuf, 0, a2);
-	cudaMalloc((void **)&d_red, a2);
-	cudaMemset(d_red, 0, a2);
-	cudaMalloc((void **)&d_green, a2);
-	cudaMemset(d_green, 0, a2);
-	cudaMalloc((void **)&d_blue, a2);
-	cudaMemset(d_blue, 0, a2);
+
 	
 	//Allocate memory on device for triangles and copy array over
 	cudaMalloc((void **)&d_tris, arrSize*sizeof(Triangle));
@@ -113,6 +154,7 @@ int main(int argc, char** argv)
    //#ifdef WRITE
    printf("r: %f, g: %f, b: %f\n", red[346][234], green[234][12], blue[292][392]);
    //#endif
+   */
 	// rasterize each triangle
 	/*for (int i = 0; i < arrSize; ++i)
 	{
@@ -125,6 +167,40 @@ int main(int argc, char** argv)
 	WriteTga("image.tga");
 
 	return 0;
+}
+
+void processTriangles(BasicModel* model)
+{
+	//Pointer to device memory for triangle array
+	Triangle *d_tris;
+
+	int arrSize = model.TriangleStructs.size();
+	
+	// Make an array of our Triangle structs
+	Triangle* tris = new Triangle[model->TriangleStructs.size()];
+	for (int i = 0; i < model->TriangleStructs.size(); ++i)
+	{
+		tris[i] = model->TriangleStructs[i];
+
+		// do diffuse shading on the vertices. These calculated colors will be
+		// linearly interpolated during rasterization.
+		tris[i].v1.rgb = diffuseShadeVertex(tris[i].normal, tris[i].v1.rgb);
+		tris[i].v2.rgb = diffuseShadeVertex(tris[i].normal, tris[i].v2.rgb);
+		tris[i].v3.rgb = diffuseShadeVertex(tris[i].normal, tris[i].v3.rgb);
+		
+		//rasterizeTriangle(convertTriTo2D(tris[i]), *red, *green, *blue, *zbuffer);
+	}
+	
+	//Allocate memory on device for triangles and copy array over
+	cudaMalloc((void **)&d_tris, arrSize*sizeof(Triangle));
+	cudaMemcpy(d_tris, tris, arrSize*sizeof(Triangle), cudaMemcpyHostToDevice);
+
+	// rasterize on GPU  (arrSize%BLOCK_WIDTH ? 0 : 1)
+	printf("Not Rasterized\n");
+	Rasterize<<< arrSize/BLOCK_WIDTH+1, BLOCK_WIDTH >>>(d_tris, d_zbuf, d_red, d_green, d_blue);
+	printf("Rasterized\n");
+
+	delete tris;
 }
 
 void init()
@@ -234,18 +310,30 @@ __device__ __host__ void rasterizeTriangle(Triangle t, float *r, float *g, float
 	float v2Z = t.v2.position.z;
 	float v3Z = t.v3.position.z;
 
+	// denominator for barycentric coords calculation = (v1.x*v2.y) - (v1.x*v3.y) - (v2.x*v1.y) + (v2.x*v3.y) + (v3.x*v1.y) - (v3.x*v2.y)
+	// calculate this once for the triangle
+	float denom = (t.v1.position.x * t.v2.position.y) -
+		(t.v1.position.x * t.v3.position.y) -
+		(t.v2.position.x * t.v1.position.y) +
+		(t.v2.position.x * t.v3.position.y) +
+		(t.v3.position.x * t.v1.position.y) -
+		(t.v3.position.x * t.v2.position.y);
+	
 	// iterate over each point (pixel) in the triangle's bounding box
 	for (int x = t.minX; x < t.maxX; ++x)
 	{
 		for (int y = t.minY; y < t.maxY; ++y)
 		{
+			if (x < 0 || x >= WindowWidth || y < 0 || y >= WindowHeight)
+				continue;
+		
 			Vertex2 p;
 			p.position.x = x;
 			p.position.y = y;
 
 			// get barycentric coordinates for p (the current X/Y position)
 			// See utils.h for VectorThree
-			VectorThree baryCoords = barycentricCoords(t.v1.position, t.v2.position, t.v3.position, p.position);
+			VectorThree baryCoords = barycentricCoords(t.v1.position, t.v2.position, t.v3.position, p.position, denom);
 
 			// Test the pixel to see if it's inside the triangle. All three
 			// barycentric coordinates must be between 0 and 1 for the pixel
@@ -289,10 +377,10 @@ __device__ __host__ void rasterizeTriangle(Triangle t, float *r, float *g, float
 *
 * returns: p's corresponding barycentric coordinates as a Vector3 struct. (x = alpha, y = beta, z = gamma)
 */
-__device__ __host__ VectorThree barycentricCoords(Vector3 v1, Vector3 v2, Vector3 v3, VectorThree p)
+__device__ __host__ VectorThree barycentricCoords(Vector3 v1, Vector3 v2, Vector3 v3, VectorThree p, float denom)
 {
 	// NOTE: these formulas found at http://crackthecode.us/barycentric/barycentric_coordinates.html
-	float denom = (v1.x*v2.y) - (v1.x*v3.y) - (v2.x*v1.y) + (v2.x*v3.y) + (v3.x*v1.y) - (v3.x*v2.y);
+	//float denom = (v1.x*v2.y) - (v1.x*v3.y) - (v2.x*v1.y) + (v2.x*v3.y) + (v3.x*v1.y) - (v3.x*v2.y);
 
 	// ((X4 * Y2) - (X4 * Y3) - (X2 * Y4) + (X2 * Y3) + (X3 * Y4) - (X3 * Y2)) 
 	float alpha = ((p.x*v2.y) - (p.x*v3.y) - (v2.x*p.y) + (v2.x*v3.y) + (v3.x*p.y) - (v3.x*v2.y)) / denom;
