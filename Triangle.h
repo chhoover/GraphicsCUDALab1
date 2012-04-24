@@ -9,6 +9,13 @@ typedef struct Vertex
 	Vector3 rgb;		// <red, green, blue> values
 } Vertex;
 
+// Similar to Vertex but usable on GPU
+typedef struct Vertex2
+{
+	VectorThree position;	// X, Y, Z coordinates
+	VectorThree rgb;		// <red, green, blue> values
+} Vertex2;
+
 // C-style struct for triangle data.
 typedef struct Triangle
 {

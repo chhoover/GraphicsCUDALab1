@@ -1,11 +1,11 @@
 SWRasterizer: SWRasterizer.o BasicModel.o
-	g++ -o SWRasterizer SWRasterizer.o BasicModel.o -pg
+	nvcc -o SWRasterizer SWRasterizer.o BasicModel.o
 	
-SWRasterizer.o: SWRasterizer.cpp BasicModel.h Model.h Triangle.h
-	g++ -c -pg SWRasterizer.cpp
+SWRasterizer.o: SWRasterizer.cu BasicModel.h Model.h Triangle.h
+	nvcc -c SWRasterizer.cu
 	
 BasicModel.o: BasicModel.cpp BasicModel.h Triangle.h
-	g++ -c -pg BasicModel.cpp
+	g++ -c BasicModel.cpp
 
 clean:
 	rm SWRasterizer *.o
