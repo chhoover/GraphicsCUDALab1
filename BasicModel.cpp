@@ -33,31 +33,6 @@ BasicModel::BasicModel(string filename)
    min_y = min_y + (0 - center.y);
    max_y = max_y + (0 - center.y);
 
-   for (int i = 0; i < Triangles.size(); ++i)
-   {
-		Tri* t = Triangles[i];
-
-		// Vertex labels in the file start at 1, but vector uses 0-based indices.
-		// Vertices are listed in order of label, though, so <vector pos> + 1 = label.
-		Vector3 v1 = normalizeVertexCoords(*(Vertices.at(t->v1 - 1)));
-		Vector3 v2 = normalizeVertexCoords(*Vertices.at(t->v2 - 1));
-		Vector3 v3 = normalizeVertexCoords(*Vertices.at(t->v3 - 1));
-			 
-		Triangle triangle;
-			 
-		triangle.normal = t->normal;
-		triangle.v1.position = v1;
-		triangle.v1.rgb = t->color;
-			 
-		triangle.v2.position = v2;
-		triangle.v2.rgb = t->color;
-
-		triangle.v3.position = v3;
-		triangle.v3.rgb = t->color;
-
-		TriangleStructs.push_back(triangle);
-   }
-
    //id = createDL();
 }
 
@@ -92,30 +67,35 @@ BasicModel::~BasicModel()
    }
 }
 
-/*
-GLuint BasicModel::createDL()
+void BasicModel::createTriangleStructs(float xOffset, float yOffset, float scaleFactor)
 {
-   // Create the list's ID
-   GLuint modelid;
-   modelid = glGenLists(1);
+	TriangleStructs.clear();
 
+	for (int i = 0; i < Triangles.size(); ++i)
+	{
+		Tri* t = Triangles[i];
 
-   // start list
-   glNewList(modelid,GL_COMPILE);
+		// Vertex labels in the file start at 1, but vector uses 0-based indices.
+		// Vertices are listed in order of label, though, so <vector pos> + 1 = label.
+		Vector3 v1 = normalizeVertexCoords(*Vertices.at(t->v1 - 1), xOffset, yOffset, scaleFactor);
+		Vector3 v2 = normalizeVertexCoords(*Vertices.at(t->v2 - 1), xOffset, yOffset, scaleFactor);
+		Vector3 v3 = normalizeVertexCoords(*Vertices.at(t->v3 - 1), xOffset, yOffset, scaleFactor);
+			 
+		Triangle triangle;
+			 
+		triangle.normal = t->normal;
+		triangle.v1.position = v1;
+		triangle.v1.rgb = t->color;
+			 
+		triangle.v2.position = v2;
+		triangle.v2.rgb = t->color;
 
-   // call the function that contains the rendering commands
-   //draw the bunny
-   for(unsigned int j = 0; j < Triangles.size(); j++) 
-   {
-      drawTria(Triangles[j]);
-   }
+		triangle.v3.position = v3;
+		triangle.v3.rgb = t->color;
 
-   // endList
-   glEndList();
-
-   return modelid;
+		TriangleStructs.push_back(triangle);
+	}
 }
-*/
 
 //open the file for reading
 void BasicModel::ReadFile(string filename) 
@@ -259,7 +239,7 @@ void BasicModel::setLOD(int lvl)
 {
 }
 
-Vector3 BasicModel::normalizeVertexCoords(Vector3 v)
+Vector3 BasicModel::normalizeVertexCoords(Vector3 v, float xOffset, float yOffset, float scaleFactor)
 {
 	Vector3 normalizedVertex;
 
@@ -270,10 +250,13 @@ Vector3 BasicModel::normalizeVertexCoords(Vector3 v)
 	normalizedVertex.z = v.z;
 
 	// now scale the vertex's coordinates so the bunny will fill
-	// more of the screen. This should (theoretically) make the bunny
-	// take up about 50% of the image.
-	normalizedVertex.x = (normalizedVertex.x * 0.5) / max_x;
-	normalizedVertex.y = (normalizedVertex.y * 0.5) / max_y;
+	// more of the screen.
+	normalizedVertex.x *= scaleFactor;
+	normalizedVertex.y *= scaleFactor;
+
+	// finally, shift the scaled coordinates by the specified offsets.
+	normalizedVertex.x += xOffset;
+	normalizedVertex.y += yOffset;
 
 	return normalizedVertex;
 }

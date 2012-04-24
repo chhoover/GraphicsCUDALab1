@@ -35,6 +35,7 @@ void rasterizeTriangle(Triangle);
 Vector3 barycentricCoords(Vector3, Vector3, Vector3, Vector3, float);
 void WriteTga(char* outfile);
 Vector3 diffuseShadeVertex(Vector3, Vector3);
+void processTriangles(BasicModel*);
 
 float zbuffer[WindowWidth][WindowHeight];
 float red[WindowWidth][WindowHeight];
@@ -47,27 +48,35 @@ int main(int argc, char** argv)
 {
 	init();
 
+	float xOffsets[5] = {-0.66, -0.33, 0, 0.33, 0.66};
+	float yOffsets[5] = {-0.66, -0.33, 0, 0.33, 0.66};
+	int scaleFactor;
+
+	bool tileBunnies = (argc == 3) && (strcmp("-t", argv[2]) == 0);
+
 	// Parse the model file
 	string filename = argv[1];
-	BasicModel model(filename);
+	BasicModel* model = new BasicModel(filename);
 
-	// Make an array of our Triangle structs
-	Triangle* tris = new Triangle[model.TriangleStructs.size()];
-	for (int i = 0; i < model.TriangleStructs.size(); ++i)
+	if (tileBunnies)
 	{
-		tris[i] = model.TriangleStructs[i];
+		scaleFactor = 3;
+		for (int yIndex = 0; yIndex < 5; ++yIndex)
+		{
+			for (int xIndex = 0; xIndex < 5; ++xIndex)
+			{
+				model->createTriangleStructs(xOffsets[xIndex], yOffsets[yIndex], scaleFactor);
 
-		// do diffuse shading on the vertices. These calculated colors will be
-		// linearly interpolated during rasterization.
-		tris[i].v1.rgb = diffuseShadeVertex(tris[i].normal, tris[i].v1.rgb);
-		tris[i].v2.rgb = diffuseShadeVertex(tris[i].normal, tris[i].v2.rgb);
-		tris[i].v3.rgb = diffuseShadeVertex(tris[i].normal, tris[i].v3.rgb);
+				processTriangles(model);
+			}
+		}
 	}
-
-	// rasterize each triangle
-	for (int i = 0; i < model.TriangleStructs.size(); ++i)
+	else
 	{
-		rasterizeTriangle(convertTriTo2D(tris[i]));
+		scaleFactor = 10;
+		model->createTriangleStructs(0, 0, scaleFactor);
+
+		processTriangles(model);
 	}
 
 	// Output the image
@@ -164,6 +173,27 @@ void test()
 
 	converted = convertTriTo2D(t2);
 	rasterizeTriangle(converted);
+}
+
+void processTriangles(BasicModel* model)
+{
+	// Make an array of our Triangle structs
+	Triangle* tris = new Triangle[model->TriangleStructs.size()];
+	for (int i = 0; i < model->TriangleStructs.size(); ++i)
+	{
+		tris[i] = model->TriangleStructs[i];
+
+		// do diffuse shading on the vertices. These calculated colors will be
+		// linearly interpolated during rasterization.
+		tris[i].v1.rgb = diffuseShadeVertex(tris[i].normal, tris[i].v1.rgb);
+		tris[i].v2.rgb = diffuseShadeVertex(tris[i].normal, tris[i].v2.rgb);
+		tris[i].v3.rgb = diffuseShadeVertex(tris[i].normal, tris[i].v3.rgb);
+
+		// rasterize the triangle
+		rasterizeTriangle(convertTriTo2D(tris[i]));
+	}
+
+	delete tris;
 }
 
 void init()
@@ -277,22 +307,26 @@ void rasterizeTriangle(Triangle t)
 	float v2Z = t.v2.position.z;
 	float v3Z = t.v3.position.z;
 
+	// denominator for barycentric coords calculation = (v1.x*v2.y) - (v1.x*v3.y) - (v2.x*v1.y) + (v2.x*v3.y) + (v3.x*v1.y) - (v3.x*v2.y)
+	// calculate this once for the triangle
+	float denom = (t.v1.position.x * t.v2.position.y) -
+		(t.v1.position.x * t.v3.position.y) -
+		(t.v2.position.x * t.v1.position.y) +
+		(t.v2.position.x * t.v3.position.y) +
+		(t.v3.position.x * t.v1.position.y) -
+		(t.v3.position.x * t.v2.position.y);
+
 	// iterate over each point (pixel) in the triangle's bounding box
 	for (int x = t.minX; x < t.maxX; ++x)
 	{
 		for (int y = t.minY; y < t.maxY; ++y)
 		{
+			if (x < 0 || x >= WindowWidth || y < 0 || y >= WindowHeight)
+				continue;
+
 			Vertex p;
 			p.position.x = x;
 			p.position.y = y;
-
-			//float denom = (v1.x*v2.y) - (v1.x*v3.y) - (v2.x*v1.y) + (v2.x*v3.y) + (v3.x*v1.y) - (v3.x*v2.y);
-			float denom = (t.v1.position.x * t.v2.position.y) -
-				(t.v1.position.x * t.v3.position.y) -
-				(t.v2.position.x * t.v1.position.y) +
-				(t.v2.position.x * t.v3.position.y) +
-				(t.v3.position.x * t.v1.position.y) -
-				(t.v3.position.x * t.v2.position.y);
 
 			// get barycentric coordinates for p (the current X/Y position)
 			Vector3 baryCoords = barycentricCoords(t.v1.position, t.v2.position, t.v3.position, p.position, denom);

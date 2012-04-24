@@ -26,6 +26,7 @@ public:
 
    void draw(float,float,float);
    void setLOD(int);
+   void createTriangleStructs(float, float, float);
 
 protected:
    GLuint id;
@@ -33,7 +34,7 @@ protected:
    Tri* parseTri(std::string line);
    void ReadFile(std::string filename);
    GLuint createDL();
-   Vector3 normalizeVertexCoords(Vector3);
+   Vector3 normalizeVertexCoords(Vector3, float, float, float);
   
 };
 
