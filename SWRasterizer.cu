@@ -201,6 +201,7 @@ void processTriangles(BasicModel* model, float* d_zbuf, float* d_red, float* d_g
 	Rasterize<<< arrSize/BLOCK_WIDTH+1, BLOCK_WIDTH >>>(d_tris, d_zbuf, d_red, d_green, d_blue);
 	printf("Rasterized\n");
 
+   cudaFree(d_tris);
 	delete tris;
 }
 
