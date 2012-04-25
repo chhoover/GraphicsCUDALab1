@@ -41,7 +41,7 @@ VectorThree barycentricCoords(Vector3, Vector3, Vector3, VectorThree, float);
 void WriteTga(char* outfile);
 Vector3 diffuseShadeVertex(Vector3, Vector3);
 __global__ void Rasterize(Triangle *d_tris, float *d_zbuf, float *d_red, float *d_green, float *d_blue);
-void processTriangles(BasicModel*, float*, float*, float*, float*);
+void processTriangles(BasicModel*, float*, float*, float*, float*, bool);
 
 float zbuffer[WindowWidth][WindowHeight];
 float red[WindowWidth][WindowHeight];
@@ -52,14 +52,22 @@ Vector3 lightColor;
 
 int main(int argc, char** argv)
 {
+	bool tileBunnies = false;
+	bool useCUDA = false;
+
+	// -t --> make an image with 25 tiled bunnies. else draw just one bunny.
+	// -c --> run with CUDA. else run on CPU.
+	for (int i = 0; i < argc; ++i)
+	{
+		if (strcmp("-t", argv[i]) == 0) tileBunnies = true;
+		else if (strcmp("-c", argv[i]) == 0) useCUDA = true;
+	}
+
 	init();
 	
 	float xOffsets[5] = {-0.66, -0.33, 0, 0.33, 0.66};
 	float yOffsets[5] = {-0.66, -0.33, 0, 0.33, 0.66};
 	int scaleFactor;
-	
-	// NOTE: To generate 25 tiled bunnies, run as: SWRasterize <model file> -t
-	bool tileBunnies = (argc == 3) && (strcmp("-t", argv[2]) == 0);
 	
 	//Future pointer to device memory for triangle array
    //Triangle *d_tris;
@@ -73,15 +81,18 @@ int main(int argc, char** argv)
 	int arrSize = model->TriangleStructs.size();
 	int a2 = WindowWidth*WindowHeight*sizeof(float);
 
-	//Allocate memory on device for zbuffer and RGB
-	cudaMalloc((void **)&d_zbuf, a2);
-	cudaMemset(d_zbuf, MinZ, a2);
-	cudaMalloc((void **)&d_red, a2);
-	cudaMemset(d_red, 0, a2);
-	cudaMalloc((void **)&d_green, a2);
-	cudaMemset(d_green, 0, a2);
-	cudaMalloc((void **)&d_blue, a2);
-	cudaMemset(d_blue, 1, a2);
+	if (useCUDA)
+	{
+		//Allocate memory on device for zbuffer and RGB
+		cudaMalloc((void **)&d_zbuf, a2);
+		cudaMemset(d_zbuf, MinZ, a2);
+		cudaMalloc((void **)&d_red, a2);
+		cudaMemset(d_red, 0, a2);
+		cudaMalloc((void **)&d_green, a2);
+		cudaMemset(d_green, 0, a2);
+		cudaMalloc((void **)&d_blue, a2);
+		cudaMemset(d_blue, 1, a2);
+	}
 	
 	if (tileBunnies)
 	{
@@ -92,7 +103,7 @@ int main(int argc, char** argv)
 			{
 				model->createTriangleStructs(xOffsets[xIndex], yOffsets[yIndex], scaleFactor);
 
-				processTriangles(model, d_zbuf, d_red, d_green, d_blue);
+				processTriangles(model, d_zbuf, d_red, d_green, d_blue, useCUDA);
 			}
 		}
 	}
@@ -101,7 +112,7 @@ int main(int argc, char** argv)
 		scaleFactor = 10;
 		model->createTriangleStructs(0, 0, scaleFactor);
 
-		processTriangles(model, d_zbuf, d_red, d_green, d_blue);
+		processTriangles(model, d_zbuf, d_red, d_green, d_blue, useCUDA);
 	}
 	
 	// Copy color buffers back to host memory
@@ -170,7 +181,7 @@ int main(int argc, char** argv)
 	return 0;
 }
 
-void processTriangles(BasicModel* model, float* d_zbuf, float* d_red, float* d_green, float* d_blue)
+void processTriangles(BasicModel* model, float* d_zbuf, float* d_red, float* d_green, float* d_blue, bool useCUDA)
 {
 	//Pointer to device memory for triangle array
 	Triangle *d_tris;
@@ -189,19 +200,25 @@ void processTriangles(BasicModel* model, float* d_zbuf, float* d_red, float* d_g
 		tris[i].v2.rgb = diffuseShadeVertex(tris[i].normal, tris[i].v2.rgb);
 		tris[i].v3.rgb = diffuseShadeVertex(tris[i].normal, tris[i].v3.rgb);
 		
-		//rasterizeTriangle(convertTriTo2D(tris[i]), *red, *green, *blue, *zbuffer);
+		if (!useCUDA)
+		{
+			rasterizeTriangle(convertTriTo2D(tris[i]), *red, *green, *blue, *zbuffer);
+		}
 	}
 	
-	//Allocate memory on device for triangles and copy array over
-	cudaMalloc((void **)&d_tris, arrSize*sizeof(Triangle));
-	cudaMemcpy(d_tris, tris, arrSize*sizeof(Triangle), cudaMemcpyHostToDevice);
+	if (useCUDA)
+	{
+		//Allocate memory on device for triangles and copy array over
+		cudaMalloc((void **)&d_tris, arrSize*sizeof(Triangle));
+		cudaMemcpy(d_tris, tris, arrSize*sizeof(Triangle), cudaMemcpyHostToDevice);
 
-	// rasterize on GPU  (arrSize%BLOCK_WIDTH ? 0 : 1)
-	printf("Not Rasterized\n");
-	Rasterize<<< arrSize/BLOCK_WIDTH+1, BLOCK_WIDTH >>>(d_tris, d_zbuf, d_red, d_green, d_blue);
-	printf("Rasterized\n");
+		// rasterize on GPU  (arrSize%BLOCK_WIDTH ? 0 : 1)
+		printf("Not Rasterized\n");
+		Rasterize<<< arrSize/BLOCK_WIDTH+1, BLOCK_WIDTH >>>(d_tris, d_zbuf, d_red, d_green, d_blue);
+		printf("Rasterized\n");
 
-   cudaFree(d_tris);
+		cudaFree(d_tris);
+	}
 	delete tris;
 }
 
