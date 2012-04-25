@@ -4,6 +4,7 @@
 #include <cuda.h>
 #include <cuda_runtime_api.h>
 #include <cuda_runtime.h>
+#include <device_launch_parameters.h>
 
 #include <string>
 #include <iostream>
@@ -40,7 +41,7 @@ VectorThree barycentricCoords(Vector3, Vector3, Vector3, VectorThree, float);
 void WriteTga(char* outfile);
 Vector3 diffuseShadeVertex(Vector3, Vector3);
 __global__ void Rasterize(Triangle *d_tris, float *d_zbuf, float *d_red, float *d_green, float *d_blue);
-void processTriangles(BasicModel*);
+void processTriangles(BasicModel*, float*, float*, float*, float*);
 
 float zbuffer[WindowWidth][WindowHeight];
 float red[WindowWidth][WindowHeight];
@@ -69,7 +70,7 @@ int main(int argc, char** argv)
 	string filename = argv[1];
 	BasicModel* model = new BasicModel(filename);
 	
-	int arrSize = model.TriangleStructs.size();
+	int arrSize = model->TriangleStructs.size();
 	int a2 = WindowWidth*WindowHeight*sizeof(float);
 
 	//Allocate memory on device for zbuffer and RGB
@@ -91,7 +92,7 @@ int main(int argc, char** argv)
 			{
 				model->createTriangleStructs(xOffsets[xIndex], yOffsets[yIndex], scaleFactor);
 
-				processTriangles(model);
+				processTriangles(model, d_zbuf, d_red, d_green, d_blue);
 			}
 		}
 	}
@@ -100,7 +101,7 @@ int main(int argc, char** argv)
 		scaleFactor = 10;
 		model->createTriangleStructs(0, 0, scaleFactor);
 
-		processTriangles(model);
+		processTriangles(model, d_zbuf, d_red, d_green, d_blue);
 	}
 	
 	// Copy color buffers back to host memory
@@ -169,12 +170,12 @@ int main(int argc, char** argv)
 	return 0;
 }
 
-void processTriangles(BasicModel* model)
+void processTriangles(BasicModel* model, float* d_zbuf, float* d_red, float* d_green, float* d_blue)
 {
 	//Pointer to device memory for triangle array
 	Triangle *d_tris;
 
-	int arrSize = model.TriangleStructs.size();
+	int arrSize = model->TriangleStructs.size();
 	
 	// Make an array of our Triangle structs
 	Triangle* tris = new Triangle[model->TriangleStructs.size()];
@@ -212,7 +213,7 @@ void init()
 			zbuffer[i][j] = MinZ;
 			red[i][j] = 0;
 			green[i][j] = 0;
-			blue[i][j] = 0;
+			blue[i][j] = 1;
 		}
 	}
 
