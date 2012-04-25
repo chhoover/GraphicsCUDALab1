@@ -75,13 +75,13 @@ int main(int argc, char** argv)
 
 	//Allocate memory on device for zbuffer and RGB
 	cudaMalloc((void **)&d_zbuf, a2);
-	cudaMemset(d_zbuf, 0, a2);
+	cudaMemset(d_zbuf, MinZ, a2);
 	cudaMalloc((void **)&d_red, a2);
 	cudaMemset(d_red, 0, a2);
 	cudaMalloc((void **)&d_green, a2);
 	cudaMemset(d_green, 0, a2);
 	cudaMalloc((void **)&d_blue, a2);
-	cudaMemset(d_blue, 0, a2);
+	cudaMemset(d_blue, 1, a2);
 	
 	if (tileBunnies)
 	{
