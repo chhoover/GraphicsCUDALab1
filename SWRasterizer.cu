@@ -74,8 +74,10 @@ int main(int argc, char** argv)
 
 	// Parse the model file
 	string filename = argv[1];
+	cout << "Reading model file...";
 	BasicModel* model = new BasicModel(filename);
-	
+	cout << " done." << endl;
+
 	int arrSize = model->TriangleStructs.size();
 	int a2 = WindowWidth*WindowHeight*sizeof(float);
 
@@ -92,6 +94,7 @@ int main(int argc, char** argv)
 		cudaMemset(d_blue, 0, a2);
 	}
 	
+	cout << "Rasterizing..." << endl;
 	if (tileBunnies)
 	{
 		scaleFactor = 3;
@@ -125,8 +128,9 @@ int main(int argc, char** argv)
 	}	
 
 	// Output the image
-	printf("write\n");
+	cout << "Writing image...";
 	WriteTga("image.tga");
+	cout << " done." << endl;
 
 	return 0;
 }
@@ -162,10 +166,7 @@ void processTriangles(BasicModel* model, float* d_zbuf, float* d_red, float* d_g
 		cudaMalloc((void **)&d_tris, arrSize*sizeof(Triangle));
 		cudaMemcpy(d_tris, tris, arrSize*sizeof(Triangle), cudaMemcpyHostToDevice);
 
-		// rasterize on GPU  (arrSize%BLOCK_WIDTH ? 0 : 1)
-		printf("Not Rasterized\n");
 		Rasterize<<< arrSize/BLOCK_WIDTH+1, BLOCK_WIDTH >>>(d_tris, d_zbuf, d_red, d_green, d_blue);
-		printf("Rasterized\n");
 
 		cudaFree(d_tris);
 	}
