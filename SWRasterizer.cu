@@ -69,10 +69,8 @@ int main(int argc, char** argv)
 	float yOffsets[5] = {-0.66, -0.33, 0, 0.33, 0.66};
 	int scaleFactor;
 	
-	//Future pointer to device memory for triangle array
-   //Triangle *d_tris;
-   //Pointers to device memory for rgb and zbuffer arrays
-   float *d_zbuf, *d_red, *d_green, *d_blue;
+	//Pointers to device memory for rgb and zbuffer arrays
+	float *d_zbuf, *d_red, *d_green, *d_blue;
 
 	// Parse the model file
 	string filename = argv[1];
@@ -91,7 +89,7 @@ int main(int argc, char** argv)
 		cudaMalloc((void **)&d_green, a2);
 		cudaMemset(d_green, 0, a2);
 		cudaMalloc((void **)&d_blue, a2);
-		cudaMemset(d_blue, 1, a2);
+		cudaMemset(d_blue, 0, a2);
 	}
 	
 	if (tileBunnies)
@@ -115,64 +113,16 @@ int main(int argc, char** argv)
 		processTriangles(model, d_zbuf, d_red, d_green, d_blue, useCUDA);
 	}
 	
-	// Copy color buffers back to host memory
-	for(int i = 0; i < WindowHeight; i++)
+	if (useCUDA)
 	{
-		cudaMemcpy(red[i], d_red+(i*WindowWidth), WindowWidth*sizeof(float), cudaMemcpyDeviceToHost);
-		cudaMemcpy(green[i], d_green+(i*WindowWidth), WindowWidth*sizeof(float), cudaMemcpyDeviceToHost);
-		cudaMemcpy(blue[i], d_blue+(i*WindowWidth), WindowWidth*sizeof(float), cudaMemcpyDeviceToHost);
-	}
-	
-	/*
-	// Make an array of our Triangle structs
-	Triangle* tris = new Triangle[model.TriangleStructs.size()];
-    
-	for (int i = 0; i < model.TriangleStructs.size(); ++i)
-	{
-		tris[i] = model.TriangleStructs[i];
-
-		// do diffuse shading on the vertices. These calculated colors will be
-		// linearly interpolated during rasterization.
-		tris[i].v1.rgb = diffuseShadeVertex(tris[i].normal, tris[i].v1.rgb);
-		tris[i].v2.rgb = diffuseShadeVertex(tris[i].normal, tris[i].v2.rgb);
-		tris[i].v3.rgb = diffuseShadeVertex(tris[i].normal, tris[i].v3.rgb);
-	}
-	
-	printf("tris[45]: %lf, %lf\n", tris[14].v1.position.x, tris[12].v1.position.x);
-
-	
-	//Allocate memory on device for triangles and copy array over
-	cudaMalloc((void **)&d_tris, arrSize*sizeof(Triangle));
-   cudaMemcpy(d_tris, tris, arrSize*sizeof(Triangle), cudaMemcpyHostToDevice);
-   
-   printf("tris[45]: %lf, %lf\n", tris[14].v1.position.x, tris[12].v1.position.x);
-   //cudaMemcpy(tris, d_tris, arrSize*sizeof(Triangle), cudaMemcpyDeviceToHost);
-   printf("tris[45]: %lf, %lf\n", tris[45].v1.position.x, tris[35].v1.position.x);
-
-   // rasterize on GPU  (arrSize%BLOCK_WIDTH ? 0 : 1)
-   printf("Not Rasterized\n");
-   Rasterize<<< arrSize/BLOCK_WIDTH+1, BLOCK_WIDTH >>>(d_tris, d_zbuf, d_red, d_green, d_blue);
-   
-   printf("Rasterized\n");
-   for(int i = 0; i < WindowHeight; i++)
-   {
-      cudaMemcpy(red[i], d_red+(i*WindowWidth), WindowWidth*sizeof(float), cudaMemcpyDeviceToHost);
-      cudaMemcpy(green[i], d_green+(i*WindowWidth), WindowWidth*sizeof(float), cudaMemcpyDeviceToHost);
-      cudaMemcpy(blue[i], d_blue+(i*WindowWidth), WindowWidth*sizeof(float), cudaMemcpyDeviceToHost);
-   }
-   
-   //cudaMemcpy(tris, d_tris, arrSize*sizeof(Triangle), cudaMemcpyDeviceToHost);
-
-   //#ifdef WRITE
-   printf("r: %f, g: %f, b: %f\n", red[346][234], green[234][12], blue[292][392]);
-   //#endif
-   */
-	// rasterize each triangle
-	/*for (int i = 0; i < arrSize; ++i)
-	{
-		rasterizeTriangle(convertTriTo2D(tris[i]), *red, *green, *blue, *zbuffer);
-	}*/
-	
+		// Copy color buffers back to host memory
+		for(int i = 0; i < WindowHeight; i++)
+		{
+			cudaMemcpy(red[i], d_red+(i*WindowWidth), WindowWidth*sizeof(float), cudaMemcpyDeviceToHost);
+			cudaMemcpy(green[i], d_green+(i*WindowWidth), WindowWidth*sizeof(float), cudaMemcpyDeviceToHost);
+			cudaMemcpy(blue[i], d_blue+(i*WindowWidth), WindowWidth*sizeof(float), cudaMemcpyDeviceToHost);
+		}
+	}	
 
 	// Output the image
 	printf("write\n");
@@ -231,7 +181,7 @@ void init()
 			zbuffer[i][j] = MinZ;
 			red[i][j] = 0;
 			green[i][j] = 0;
-			blue[i][j] = 1;
+			blue[i][j] = 0;
 		}
 	}
 
