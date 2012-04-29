@@ -42,25 +42,35 @@ void WriteTga(char* outfile);
 Vector3 diffuseShadeVertex(Vector3, Vector3);
 __global__ void Rasterize(Triangle *d_tris, float *d_zbuf, float *d_red, float *d_green, float *d_blue);
 void processTriangles(BasicModel*, float*, float*, float*, float*, bool);
+void gaussianBlurCPU(int);
+Vector3 horizontalBlur(float, float);
+Vector3 verticalBlur(float, float);
 
 float zbuffer[WindowWidth][WindowHeight];
 float red[WindowWidth][WindowHeight];
 float green[WindowWidth][WindowHeight];
 float blue[WindowWidth][WindowHeight];
+float blurredRed[WindowWidth][WindowHeight];
+float blurredGreen[WindowWidth][WindowHeight];
+float blurredBlue[WindowWidth][WindowHeight];
 Vector3 directionToLight;
 Vector3 lightColor;
+float gaussianBlurWeights[5] = {70.0f/256.0f, 56.0f/256.0f, 28.0f/256.0f, 8.0f/256.0f, 1.0f/256.0f};
 
 int main(int argc, char** argv)
 {
 	bool tileBunnies = false;
 	bool useCUDA = false;
+	bool useBlurring = false;
 
 	// -t --> make an image with 25 tiled bunnies. else draw just one bunny.
 	// -c --> run with CUDA. else run on CPU.
+	// -b --> enable Gaussian blurring.
 	for (int i = 0; i < argc; ++i)
 	{
 		if (strcmp("-t", argv[i]) == 0) tileBunnies = true;
 		else if (strcmp("-c", argv[i]) == 0) useCUDA = true;
+		else if (strcmp("-b", argv[i]) == 0) useBlurring = true;
 	}
 
 	init();
@@ -125,7 +135,11 @@ int main(int argc, char** argv)
 			cudaMemcpy(green[i], d_green+(i*WindowWidth), WindowWidth*sizeof(float), cudaMemcpyDeviceToHost);
 			cudaMemcpy(blue[i], d_blue+(i*WindowWidth), WindowWidth*sizeof(float), cudaMemcpyDeviceToHost);
 		}
-	}	
+	}
+	else
+	{
+		if (useBlurring) gaussianBlurCPU(1);
+	}
 
 	// Output the image
 	cout << "Writing image...";
@@ -171,6 +185,114 @@ void processTriangles(BasicModel* model, float* d_zbuf, float* d_red, float* d_g
 		cudaFree(d_tris);
 	}
 	delete tris;
+}
+
+/*
+* Applies Gaussian blurring for a given pixel coordinate
+* using neighboring pixels on the same row.
+*
+* x, y: Pixel coordinates for the point to blur.
+*/
+Vector3 horizontalBlur(int x, int y)
+{
+	Vector3 blurredColors; // x = red, y = green, z = blue
+
+	blurredColors.x = red[x][y] * gaussianBlurWeights[0];
+	blurredColors.y = green[x][y] * gaussianBlurWeights[0];
+	blurredColors.z = blue[x][y] * gaussianBlurWeights[0];
+
+	for (int i = 1; i < 5 && x - i >= 0; ++i)
+	{
+		blurredColors.x += red[x-i][y] * gaussianBlurWeights[i];
+		blurredColors.y += green[x-i][y] * gaussianBlurWeights[i];
+		blurredColors.z += blue[x-i][y] * gaussianBlurWeights[i];
+	}
+	for (int i = 1; i < 5 && x + i < WindowWidth; ++i)
+	{
+		blurredColors.x += red[x+i][y] * gaussianBlurWeights[i];
+		blurredColors.y += green[x+i][y] * gaussianBlurWeights[i];
+		blurredColors.z += blue[x+i][y] * gaussianBlurWeights[i];
+	}
+
+	return blurredColors;
+}
+
+/*
+* Applies Gaussian blurring for a given pixel coordinate
+* using neighboring pixels on the same column.
+*
+* NOTE: This Gaussian blur implementation is designed to use
+* the results of horizontal blurring as input for the vertical
+* blurring pass. Therefore, the blurredRed/blurredGreen/blurredBlue
+* arrays MUST be fully populated with horizontally blurred colors
+* before this function is called.
+* 
+* x, y: Pixel coordinates for the point to blur.
+*/
+Vector3 verticalBlur(int x, int y)
+{
+	Vector3 blurredColors; // x = red, y = green, z = blue
+
+	blurredColors.x = blurredRed[x][y] * gaussianBlurWeights[0];
+	blurredColors.y = blurredRed[x][y] * gaussianBlurWeights[0];
+	blurredColors.z = blurredRed[x][y] * gaussianBlurWeights[0];
+
+	for (int i = 1; i < 5 && y - i >= 0; ++i)
+	{
+		blurredColors.x += blurredRed[x][y-i] * gaussianBlurWeights[i];
+		blurredColors.y += blurredGreen[x][y-i] * gaussianBlurWeights[i];
+		blurredColors.z += blurredBlue[x][y-i] * gaussianBlurWeights[i];
+	}
+	for (int i = 1; i < 5 && y + i < WindowHeight; ++i)
+	{
+		blurredColors.x += blurredRed[x][y+i] * gaussianBlurWeights[i];
+		blurredColors.y += blurredGreen[x][y+i] * gaussianBlurWeights[i];
+		blurredColors.z += blurredBlue[x][y+i] * gaussianBlurWeights[i];
+	}
+
+	return blurredColors;
+}
+
+/*
+* CPU implementation of Gaussian blurring (anti-aliasing).
+* 
+* numPasses: How many times the image should be blurred
+*/
+void gaussianBlurCPU(int numPasses)
+{
+	for (int i = 0; i < numPasses; ++i)
+	{
+		// Do just horizontal blurring first. Use the blurredRed, 
+		// blurredGreen, and blurredBlue arrays to hold the results
+		// of this blurring pass.
+		for (int x = 0; x < WindowWidth; ++x)
+		{
+			for (int y = 0; y < WindowHeight; ++y)
+			{
+				Vector3 hBlur = horizontalBlur(x, y);
+
+				blurredRed[x][y] = hBlur.x;
+				blurredGreen[x][y] = hBlur.y;
+				blurredBlue[x][y] = hBlur.z;
+			}
+		}
+
+		// Do vertical blurring next, using the results
+		// of the horizontal blurring. The final blurred
+		// colors are written back into the primary
+		// red/green/blue arrays.
+		for (int x = 0; x < WindowWidth; ++x)
+		{
+			for (int y = 0; y < WindowHeight; ++y)
+			{
+				Vector3 vBlur = verticalBlur(x, y);
+
+				red[x][y] = vBlur.x;
+				green[x][y] = vBlur.y;
+				blue[x][y] = vBlur.z;
+			}
+		}
+	}
 }
 
 void init()
