@@ -43,8 +43,10 @@ Vector3 diffuseShadeVertex(Vector3, Vector3);
 __global__ void Rasterize(Triangle *d_tris, float *d_zbuf, float *d_red, float *d_green, float *d_blue);
 void processTriangles(BasicModel*, float*, float*, float*, float*, bool);
 void gaussianBlurCPU(int);
-Vector3 horizontalBlur(float, float);
-Vector3 verticalBlur(float, float);
+VectorThree horizontalBlur(int, int, float*, float*, float*, float*);
+VectorThree verticalBlur(int, int, float*, float*, float*, float*);
+void gaussianGPU(int passes, float *r, float *g, float *b);
+__global__ void beginGauss(float*, float*, float*, float*, float*, float*, float*);
 
 float zbuffer[WindowWidth][WindowHeight];
 float red[WindowWidth][WindowHeight];
@@ -62,6 +64,7 @@ int main(int argc, char** argv)
 	bool tileBunnies = false;
 	bool useCUDA = false;
 	bool useBlurring = false;
+	string filename;
 
 	// -t --> make an image with 25 tiled bunnies. else draw just one bunny.
 	// -c --> run with CUDA. else run on CPU.
@@ -71,6 +74,8 @@ int main(int argc, char** argv)
 		if (strcmp("-t", argv[i]) == 0) tileBunnies = true;
 		else if (strcmp("-c", argv[i]) == 0) useCUDA = true;
 		else if (strcmp("-b", argv[i]) == 0) useBlurring = true;
+		else
+		   filename = argv[i];
 	}
 
 	init();
@@ -83,7 +88,6 @@ int main(int argc, char** argv)
 	float *d_zbuf, *d_red, *d_green, *d_blue;
 
 	// Parse the model file
-	string filename = argv[1];
 	cout << "Reading model file...";
 	BasicModel* model = new BasicModel(filename);
 	cout << " done." << endl;
@@ -104,7 +108,8 @@ int main(int argc, char** argv)
 		cudaMemset(d_blue, 0, a2);
 	}
 	
-	cout << "Rasterizing..." << endl;
+	cout << "Rasterizing...";
+   fflush(stdout);
 	if (tileBunnies)
 	{
 		scaleFactor = 3;
@@ -125,21 +130,20 @@ int main(int argc, char** argv)
 
 		processTriangles(model, d_zbuf, d_red, d_green, d_blue, useCUDA);
 	}
+	printf(" done.\n");
 	
 	if (useCUDA)
 	{
 		// Copy color buffers back to host memory
-		for(int i = 0; i < WindowHeight; i++)
-		{
-			cudaMemcpy(red[i], d_red+(i*WindowWidth), WindowWidth*sizeof(float), cudaMemcpyDeviceToHost);
-			cudaMemcpy(green[i], d_green+(i*WindowWidth), WindowWidth*sizeof(float), cudaMemcpyDeviceToHost);
-			cudaMemcpy(blue[i], d_blue+(i*WindowWidth), WindowWidth*sizeof(float), cudaMemcpyDeviceToHost);
-		}
+		if(useBlurring) gaussianGPU(100, d_red, d_green, d_blue);
+		cudaMemcpy(red, d_red, WindowWidth*WindowHeight*sizeof(float), cudaMemcpyDeviceToHost);
+		cudaMemcpy(green, d_green, WindowWidth*WindowHeight*sizeof(float), cudaMemcpyDeviceToHost);
+		cudaMemcpy(blue, d_blue, WindowWidth*WindowHeight*sizeof(float), cudaMemcpyDeviceToHost);
+      cudaFree(d_red);
+      cudaFree(d_green);
+      cudaFree(d_blue);
 	}
-	else
-	{
-		if (useBlurring) gaussianBlurCPU(1);
-	}
+	else if (useBlurring) gaussianBlurCPU(9);
 
 	// Output the image
 	cout << "Writing image...";
@@ -187,31 +191,117 @@ void processTriangles(BasicModel* model, float* d_zbuf, float* d_red, float* d_g
 	delete tris;
 }
 
+__global__ void gaussVert(float* red, float* green, float* blue, float* redBlur, float* greenBlur, float* blueBlur, float* gauss)
+{
+   int x = blockIdx.x*10+threadIdx.x;
+   int y = blockIdx.y*10+threadIdx.y;
+   if(x>=WindowWidth || y>=WindowHeight)
+      return;
+
+   VectorThree temp;
+   temp.x = redBlur[y*WindowWidth+x] * gauss[0];
+   temp.y = greenBlur[y*WindowWidth+x] * gauss[0];
+	temp.z = blueBlur[y*WindowWidth+x] * gauss[0];
+	for (int i = 1; i < 5 && y - i >= 0; ++i)
+	{
+		temp.x += redBlur[x+WindowWidth*(y-i)]*gauss[i];
+		temp.y += greenBlur[x+WindowWidth*(y-i)]*gauss[i];
+		temp.z += blueBlur[x+WindowWidth*(y-i)]*gauss[i];
+	}
+	__syncthreads();
+	for (int i = 1; i < 5 && y + i < WindowWidth; ++i)
+	{
+		temp.x += redBlur[x+WindowWidth*(y+i)] * gauss[i];
+		temp.y += greenBlur[x+WindowWidth*(y+i)] * gauss[i];
+		temp.z += blueBlur[x+WindowWidth*(y+i)] * gauss[i];
+	}
+	
+	red[y*WindowWidth+x] = temp.x;
+	green[y*WindowWidth+x] = temp.y;
+	blue[y*WindowWidth+x] = temp.z;
+	
+	__syncthreads();
+}
+
+__global__ void gaussHoriz(float* red, float* green, float* blue, float* redBlur, float* greenBlur, float* blueBlur, float* gauss)
+{
+   int x = blockIdx.x*10+threadIdx.x;
+   int y = blockIdx.y*10+threadIdx.y;
+   
+   if(x>=WindowWidth || y>=WindowHeight)
+      return;
+
+   VectorThree temp;
+   temp.x = red[y*WindowWidth+x] * gauss[0];
+   temp.y = green[y*WindowWidth+x] * gauss[0];
+	temp.z = blue[y*WindowWidth+x] * gauss[0];
+	for (int i = 1; i < 5 && x - i >= 0; ++i)
+	{
+		temp.x += red[x-i+WindowWidth*y] * gauss[i];
+		temp.y += green[x-i+WindowWidth*y] * gauss[i];
+		temp.z += blue[x-i+WindowWidth*y] * gauss[i];
+	}
+	__syncthreads();
+	for (int i = 1; i < 5 && x + i < WindowWidth; ++i)
+	{
+		temp.x += red[x+i+WindowWidth*y] * gauss[i];
+		temp.y += green[x+i+WindowWidth*y] * gauss[i];
+		temp.z += blue[x+i+WindowWidth*y] * gauss[i];
+	}
+	redBlur[y*WindowWidth+x] = temp.x;
+	greenBlur[y*WindowWidth+x] = temp.y;
+	blueBlur[y*WindowWidth+x] = temp.z;
+	__syncthreads();
+}
+
+void gaussianGPU(int passes, float *r, float *g, float *b)
+{
+   printf("Anti-Aliasing...");
+   fflush(stdout);
+   float *gauss, *rBlur, *bBlur, *gBlur;
+   cudaMalloc((void **)&gauss, 5*sizeof(float));
+   cudaMemcpy(gauss, gaussianBlurWeights, 5*sizeof(float), cudaMemcpyHostToDevice);
+   cudaMalloc((void **)&rBlur, WindowWidth*WindowHeight*sizeof(float));
+   cudaMalloc((void **)&gBlur, WindowWidth*WindowHeight*sizeof(float));
+   cudaMalloc((void **)&bBlur, WindowWidth*WindowHeight*sizeof(float));
+   dim3 grid (200, 200), block(10, 10);
+   for(int i=0;i<passes;++i)
+   {
+	   gaussHoriz<<< grid, block >>>(r, g, b, rBlur, gBlur, bBlur, gauss);
+	   gaussVert<<< grid, block >>> (r, g, b, rBlur, gBlur, bBlur, gauss);
+   }
+	cudaFree(gauss);
+	cudaFree(rBlur);
+	cudaFree(bBlur);
+	cudaFree(gBlur);
+	printf(" done.\n");
+}
+
 /*
 * Applies Gaussian blurring for a given pixel coordinate
 * using neighboring pixels on the same row.
 *
 * x, y: Pixel coordinates for the point to blur.
 */
-Vector3 horizontalBlur(int x, int y)
+__device__ __host__ VectorThree horizontalBlur(int x, int y, float *r, float *g, float *b, float *gauss)
 {
-	Vector3 blurredColors; // x = red, y = green, z = blue
+	VectorThree blurredColors; // x = red, y = green, z = blue
 
-	blurredColors.x = red[x][y] * gaussianBlurWeights[0];
-	blurredColors.y = green[x][y] * gaussianBlurWeights[0];
-	blurredColors.z = blue[x][y] * gaussianBlurWeights[0];
+	blurredColors.x = r[y*WindowWidth+x] * gauss[0];
+	blurredColors.y = g[y*WindowWidth+x] * gauss[0];
+	blurredColors.z = b[y*WindowWidth+x] * gauss[0];
 
 	for (int i = 1; i < 5 && x - i >= 0; ++i)
 	{
-		blurredColors.x += red[x-i][y] * gaussianBlurWeights[i];
-		blurredColors.y += green[x-i][y] * gaussianBlurWeights[i];
-		blurredColors.z += blue[x-i][y] * gaussianBlurWeights[i];
+		blurredColors.x += r[x-i+WindowWidth*y] * gauss[i];
+		blurredColors.y += g[x-i+WindowWidth*y] * gauss[i];
+		blurredColors.z += b[x-i+WindowWidth*y] * gauss[i];
 	}
 	for (int i = 1; i < 5 && x + i < WindowWidth; ++i)
 	{
-		blurredColors.x += red[x+i][y] * gaussianBlurWeights[i];
-		blurredColors.y += green[x+i][y] * gaussianBlurWeights[i];
-		blurredColors.z += blue[x+i][y] * gaussianBlurWeights[i];
+		blurredColors.x += r[x+i+WindowWidth*y] * gauss[i];
+		blurredColors.y += g[x+i+WindowWidth*y] * gauss[i];
+		blurredColors.z += b[x+i+WindowWidth*y] * gauss[i];
 	}
 
 	return blurredColors;
@@ -229,25 +319,25 @@ Vector3 horizontalBlur(int x, int y)
 * 
 * x, y: Pixel coordinates for the point to blur.
 */
-Vector3 verticalBlur(int x, int y)
+__device__ __host__ VectorThree verticalBlur(int x, int y, float *r, float *g, float *b, float *gauss)
 {
-	Vector3 blurredColors; // x = red, y = green, z = blue
+	VectorThree blurredColors; // x = red, y = green, z = blue
 
-	blurredColors.x = blurredRed[x][y] * gaussianBlurWeights[0];
-	blurredColors.y = blurredRed[x][y] * gaussianBlurWeights[0];
-	blurredColors.z = blurredRed[x][y] * gaussianBlurWeights[0];
+	blurredColors.x = r[y*WindowWidth+x] * gauss[0];
+	blurredColors.y = g[y*WindowWidth+x] * gauss[0];
+	blurredColors.z = b[y*WindowWidth+x] * gauss[0];
 
 	for (int i = 1; i < 5 && y - i >= 0; ++i)
 	{
-		blurredColors.x += blurredRed[x][y-i] * gaussianBlurWeights[i];
-		blurredColors.y += blurredGreen[x][y-i] * gaussianBlurWeights[i];
-		blurredColors.z += blurredBlue[x][y-i] * gaussianBlurWeights[i];
+		blurredColors.x += r[x+WindowWidth*y-i] * gauss[i];
+		blurredColors.y += g[x+WindowWidth*y-i] * gauss[i];
+		blurredColors.z += b[x+WindowWidth*y-i] * gauss[i];
 	}
 	for (int i = 1; i < 5 && y + i < WindowHeight; ++i)
 	{
-		blurredColors.x += blurredRed[x][y+i] * gaussianBlurWeights[i];
-		blurredColors.y += blurredGreen[x][y+i] * gaussianBlurWeights[i];
-		blurredColors.z += blurredBlue[x][y+i] * gaussianBlurWeights[i];
+		blurredColors.x += r[x+WindowWidth*y+i] * gauss[i];
+		blurredColors.y += g[x+WindowWidth*y+i] * gauss[i];
+		blurredColors.z += b[x+WindowWidth*y+i] * gauss[i];
 	}
 
 	return blurredColors;
@@ -269,7 +359,7 @@ void gaussianBlurCPU(int numPasses)
 		{
 			for (int y = 0; y < WindowHeight; ++y)
 			{
-				Vector3 hBlur = horizontalBlur(x, y);
+				VectorThree hBlur = horizontalBlur(x, y, (float *)red, (float *)green, (float *)blue, (float *)gaussianBlurWeights);
 
 				blurredRed[x][y] = hBlur.x;
 				blurredGreen[x][y] = hBlur.y;
@@ -285,7 +375,7 @@ void gaussianBlurCPU(int numPasses)
 		{
 			for (int y = 0; y < WindowHeight; ++y)
 			{
-				Vector3 vBlur = verticalBlur(x, y);
+				VectorThree vBlur = verticalBlur(x, y, (float *)blurredRed, (float *)blurredGreen, (float *)blurredBlue, (float *)gaussianBlurWeights);
 
 				red[x][y] = vBlur.x;
 				green[x][y] = vBlur.y;
@@ -303,8 +393,8 @@ void init()
 		{
 			zbuffer[i][j] = MinZ;
 			red[i][j] = 0;
-			green[i][j] = 0;
-			blue[i][j] = 0;
+			green[i][j] = .3;
+			blue[i][j] = .7;
 		}
 	}
 
