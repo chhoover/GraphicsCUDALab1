@@ -109,7 +109,7 @@ int main(int argc, char** argv)
 	}
 	
 	cout << "Rasterizing...";
-   fflush(stdout);
+	fflush(stdout);
 	if (tileBunnies)
 	{
 		scaleFactor = 3;
@@ -134,16 +134,24 @@ int main(int argc, char** argv)
 	
 	if (useCUDA)
 	{
+		if(useBlurring)
+		{
+			gaussianGPU(100, d_red, d_green, d_blue);
+		}
+		
 		// Copy color buffers back to host memory
-		if(useBlurring) gaussianGPU(100, d_red, d_green, d_blue);
 		cudaMemcpy(red, d_red, WindowWidth*WindowHeight*sizeof(float), cudaMemcpyDeviceToHost);
 		cudaMemcpy(green, d_green, WindowWidth*WindowHeight*sizeof(float), cudaMemcpyDeviceToHost);
 		cudaMemcpy(blue, d_blue, WindowWidth*WindowHeight*sizeof(float), cudaMemcpyDeviceToHost);
-      cudaFree(d_red);
-      cudaFree(d_green);
-      cudaFree(d_blue);
+		
+		cudaFree(d_red);
+		cudaFree(d_green);
+		cudaFree(d_blue);
 	}
-	else if (useBlurring) gaussianBlurCPU(9);
+	else if (useBlurring)
+	{
+		gaussianBlurCPU(100);
+	}
 
 	// Output the image
 	cout << "Writing image...";
@@ -256,24 +264,30 @@ __global__ void gaussHoriz(float* red, float* green, float* blue, float* redBlur
 
 void gaussianGPU(int passes, float *r, float *g, float *b)
 {
-   printf("Anti-Aliasing...");
-   fflush(stdout);
-   float *gauss, *rBlur, *bBlur, *gBlur;
-   cudaMalloc((void **)&gauss, 5*sizeof(float));
-   cudaMemcpy(gauss, gaussianBlurWeights, 5*sizeof(float), cudaMemcpyHostToDevice);
-   cudaMalloc((void **)&rBlur, WindowWidth*WindowHeight*sizeof(float));
-   cudaMalloc((void **)&gBlur, WindowWidth*WindowHeight*sizeof(float));
-   cudaMalloc((void **)&bBlur, WindowWidth*WindowHeight*sizeof(float));
-   dim3 grid (200, 200), block(10, 10);
-   for(int i=0;i<passes;++i)
-   {
+	printf("Anti-Aliasing...");
+	fflush(stdout);
+	
+	float *gauss, *rBlur, *bBlur, *gBlur;
+	
+	cudaMalloc((void **)&gauss, 5*sizeof(float));
+	cudaMemcpy(gauss, gaussianBlurWeights, 5*sizeof(float), cudaMemcpyHostToDevice);
+	cudaMalloc((void **)&rBlur, WindowWidth*WindowHeight*sizeof(float));
+	cudaMalloc((void **)&gBlur, WindowWidth*WindowHeight*sizeof(float));
+	cudaMalloc((void **)&bBlur, WindowWidth*WindowHeight*sizeof(float));
+	
+	dim3 grid (200, 200), block(10, 10);
+	
+	for(int i=0;i<passes;++i)
+	{
 	   gaussHoriz<<< grid, block >>>(r, g, b, rBlur, gBlur, bBlur, gauss);
 	   gaussVert<<< grid, block >>> (r, g, b, rBlur, gBlur, bBlur, gauss);
-   }
+	}
+	
 	cudaFree(gauss);
 	cudaFree(rBlur);
 	cudaFree(bBlur);
 	cudaFree(gBlur);
+	
 	printf(" done.\n");
 }
 
@@ -350,6 +364,7 @@ __device__ __host__ VectorThree verticalBlur(int x, int y, float *r, float *g, f
 */
 void gaussianBlurCPU(int numPasses)
 {
+	cout << "Anti-Aliasing... " << endl;
 	for (int i = 0; i < numPasses; ++i)
 	{
 		// Do just horizontal blurring first. Use the blurredRed, 
@@ -383,6 +398,7 @@ void gaussianBlurCPU(int numPasses)
 			}
 		}
 	}
+	cout << "done." << endl;
 }
 
 void init()
@@ -393,8 +409,8 @@ void init()
 		{
 			zbuffer[i][j] = MinZ;
 			red[i][j] = 0;
-			green[i][j] = .3;
-			blue[i][j] = .7;
+			green[i][j] = 0;
+			blue[i][j] = 0;
 		}
 	}
 
